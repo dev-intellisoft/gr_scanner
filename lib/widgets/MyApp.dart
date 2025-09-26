@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:webcam_doc/pages/documento_page.dart';
 import 'package:webcam_doc/pages/home_page.dart';
 
 class MyApp extends StatelessWidget {
@@ -18,7 +19,7 @@ class MyApp extends StatelessWidget {
           title: Text('Pagina para scanner documento'),
           backgroundColor: Colors.indigo,
         ),
-        body: HomePage(),
+        body: DocumentoPage(),
       ),
     );
   }
