@@ -19,7 +19,7 @@ class MyApp extends StatelessWidget {
           title: Text('Pagina para scanner documento'),
           backgroundColor: Colors.indigo,
         ),
-        body: DocumentoPage(),
+        body: const DocumentoPage(),
       ),
     );
   }
