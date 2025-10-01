@@ -1,4 +1,6 @@
+import 'package:flutter/cupertino.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
+import 'package:intl/intl.dart';
 import 'package:webcam_doc/models/patient_model.dart';
 
 mixin ExtrairDadosDePatient {
@@ -11,11 +13,9 @@ mixin ExtrairDadosDePatient {
     String? cpf;
     String? nome;
     String? dataNascimento;
-    List<String> guesses = [];
+    List<String> posibilities = [];
 
     final cpfRegex = RegExp(r'\b\d{3}[.\s]?\d{3}[.\s]?\d{3}[-.\s]?\d{2}\b');
-    final dataNascimentoRegex = RegExp(r'\d{2}[/\- ]\d{2}[/\- ]\d{4}');
-
     final cpfMatch = cpfRegex.firstMatch(texto);
     if (cpfMatch != null) {
       String cpfLimpo = _onlyDigits(cpfMatch.group(0)!);
@@ -24,17 +24,7 @@ mixin ExtrairDadosDePatient {
       }
     }
 
-    final dataContextualRegex = RegExp(r'(DATA\s+DE\s+NASCIMENTO|NASCIMENTO|DT\.?)\s*[:\s]?\s*(\d{2}[/\- ]\d{2}[/\- ]\d{4})', caseSensitive: false);
-    final dataContextualMatch = dataContextualRegex.firstMatch(texto);
-
-    if (dataContextualMatch != null && dataContextualMatch.group(2) != null) {
-      dataNascimento = dataContextualMatch.group(2)!.replaceAll(RegExp(r'[\- ]'), '/');
-    } else {
-      final dataMatch = dataNascimentoRegex.firstMatch(texto);
-      if (dataMatch != null) {
-        dataNascimento = dataMatch.group(0)!.replaceAll(RegExp(r'[\- ]'), '/');
-      }
-    }
+    dataNascimento = encontrarMenorData(texto);
 
     final List<String> linhas = eliminarRuidos(recognizedText);
     String? nomeCandidato;
@@ -55,7 +45,7 @@ mixin ExtrairDadosDePatient {
         final palavrasNaLinha = linhaTrimmed.split(RegExp(r'\s+')).where((p) => p.isNotEmpty).toList();
 
         if (palavrasNaLinha.length >= 2 && !linhaUpper.contains("PAI") && !linhaUpper.contains("MÃE") && !linhaUpper.contains("FILIAÇÃO")) {
-          nome = linhaTrimmed;
+          nome = linhaTrimmed; // Nome encontrado, sai do loop
           break;
         }
         proximaLinhaENome = false;
@@ -66,37 +56,43 @@ mixin ExtrairDadosDePatient {
         if (linhaUpper.contains("NOME:") && !linhaUpper.contains("PAI") && !linhaUpper.contains("MÃE")) {
           String nomeExtraido = linhaTrimmed.substring(linhaUpper.indexOf("NOME:") + 5).trim();
           if (nomeExtraido.split(RegExp(r'\s+')).length >= 2) {
-            nome = nomeExtraido;
+            nome = nomeExtraido; // Nome encontrado, sai do loop
             break;
           }
         }
 
-        if (nome == null) {
+        if (nome == null) { // Só ativa a flag se o nome ainda não foi encontrado
           proximaLinhaENome = true;
         }
         continue;
       }
 
+      // Lógica para adicionar candidatos à lista posibilities
       final palavrasNaLinha = linhaTrimmed.split(RegExp(r'\s+')).where((p) => p.isNotEmpty).toList();
       if (palavrasNaLinha.length >= 2 && palavrasNaLinha.length <= 8) {
-
         if (!linhaUpper.contains("PAI") && !linhaUpper.contains("MÃE") && !linhaUpper.contains("FILIAÇÃO")) {
-          nomeCandidato = linhaTrimmed;
-        } else if (nomeCandidato == null) {
+          // Adiciona à lista posibilities se não for um nome de pai/mãe
+          // e se ainda não foi definido como o nome principal
+          if (nome == null && !posibilities.contains(linhaTrimmed)) {
+            posibilities.add(linhaTrimmed);
+          }
+          nomeCandidato ??= linhaTrimmed; // Define como candidato se nomeCandidato for nulo
+        } else if (nomeCandidato == null && nome == null && !posibilities.contains(linhaTrimmed)) {
+          // Adiciona à lista posibilities se for uma linha de filiação,
+          // o nome principal e o nomeCandidato ainda não foram definidos.
+          posibilities.add(linhaTrimmed);
           nomeCandidato = linhaTrimmed;
         }
       }
     }
 
-    nome ??= nomeCandidato;
 
-    eliminarRuidos(recognizedText);
 
     return PatientModel(
       cpf: cpf ?? '',
-      nome: nome ?? '',
-      dataNascimento: dataNascimento ?? '',
-      guesses: guesses.map((e) => e.toString()).toList(),
+      name: nome ?? '',
+      birthDate: dataNascimento ?? '',
+      posibilities: posibilities.map((e) => e.toString()).toList(),
     );
   }
 
@@ -111,7 +107,7 @@ mixin ExtrairDadosDePatient {
       'PROCURADOR', 'PROPRIETÁRIO', 'GOVERNO', 'FEDERAL', 'SOCIAL',
       'SEXO', 'SEX', 'NACIONALIDADE', 'NATURALIDADE', 'SECRETARIA', 'HABILTAÇAO'
       'DATA', 'DATE', 'REGISTRO', 'PERSONAL', 'OF', 'BIRTH', 'TODO',
-      'TERRITORIO', 'NACIONAL'
+      'TERRITORIO', 'NACIONAL', '.', '/', '-', ':', ',',
     ];
 
     for (TextBlock block in recognizedText.blocks) {
@@ -130,8 +126,36 @@ mixin ExtrairDadosDePatient {
       }
     }
 
-    print('semrido');
-    print(semRuido);
     return semRuido;
   }
+
+  static String? encontrarMenorData(String texto) {
+    final dataRegex = RegExp(r'\b(\d{2}[/\- ]\d{2}[/\- ]\d{4})\b');
+    final matches = dataRegex.allMatches(texto);  if (matches.isEmpty) {
+      return null;
+    }
+
+    List<DateTime> datasEncontradas = [];
+    final DateFormat formatoEntrada = DateFormat('dd/MM/yyyy');
+
+    for (final Match m in matches) {
+      String dataString = m.group(1)!;
+      String dataNormalizada = dataString.replaceAll(RegExp(r'[\- ]'), '/');
+      try {
+        DateTime data = formatoEntrada.parseStrict(dataNormalizada);
+        datasEncontradas.add(data);
+      } catch (e) {
+        debugPrint("Formato de data inválido encontrado e ignorado: $dataNormalizada");
+      }
+    }
+
+    if (datasEncontradas.isEmpty) {
+      return null;
+    }
+
+    datasEncontradas.sort((a, b) => a.compareTo(b));
+
+    return formatoEntrada.format(datasEncontradas.first);
+  }
+
 }
