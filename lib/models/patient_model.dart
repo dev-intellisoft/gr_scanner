@@ -1,31 +1,31 @@
 class PatientModel {
-  String nome;
+  String name;
   String cpf;
-  String dataNascimento;
-  List<String> guesses = <String>[];
+  String birthDate;
+  List<String> posibilities = <String>[];
 
   PatientModel({
-    required this.nome,
+    required this.name,
     required this.cpf,
-    required this.dataNascimento,
-    required this.guesses
+    required this.birthDate,
+    required this.posibilities
   });
 
   factory PatientModel.fromJson(Map<String, dynamic> json){
     return PatientModel(
-      nome: json['nome'],
+      name: json['name'],
       cpf: json['cpf'],
-      dataNascimento: json['dataNascimento'],
-      guesses: json['guesses']
+      birthDate: json['birthDate'],
+      posibilities: json['posibilities']
     );
   }
 
   Map<String, dynamic> toJson() {
     return {
-      'nome': nome,
+      'name': name,
       'cpf': cpf,
-      'dataNascimento': dataNascimento,
-      'guesses': guesses
+      'birthDate': birthDate,
+      'posibilities': posibilities
     };
   }
 }
