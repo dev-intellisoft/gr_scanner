@@ -1,7 +1,7 @@
 class PatientModel {
   String name;
   String cpf;
-  String birthDate;
+  DateTime? birthDate;
   List<String> posibilities = <String>[];
 
   PatientModel({
@@ -24,7 +24,7 @@ class PatientModel {
     return {
       'name': name,
       'cpf': cpf,
-      'birthDate': birthDate,
+      'birthDate': birthDate?.toIso8601String(),
       'posibilities': posibilities
     };
   }

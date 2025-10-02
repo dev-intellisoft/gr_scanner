@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:webcam_doc/models/massege_model.dart';
@@ -17,8 +18,10 @@ class DocumentoPage extends StatefulWidget {
 }
 
 class _DocumentoPageState extends State<DocumentoPage> {
+  static const String _from = 'app_scanner';
+
   final _channel = WebSocketChannel.connect(
-    Uri.parse('') // endereço do websocket
+    Uri.parse('${dotenv.env['WEBSOCKET_URL_TEST']}/$_from')
   );
 
   List<CameraDescription> cameras = [];
@@ -27,6 +30,9 @@ class _DocumentoPageState extends State<DocumentoPage> {
   Size? size;
   String? textoExtraido;
 
+  String? to;
+  String? from;
+
   bool _isScanning = false;
 
   _init() async {
@@ -34,7 +40,8 @@ class _DocumentoPageState extends State<DocumentoPage> {
 
     _channel.stream.listen((message) {
       Map<String, dynamic> data = jsonDecode(message);
-      if (data['data'] == 'scanner') {
+      if (data['event'] == 'CUSTOM_EVENT') {
+        to = data['from'];
         Future.delayed(const Duration(milliseconds: 500), () {
           tirarFoto();
         });
@@ -82,13 +89,12 @@ class _DocumentoPageState extends State<DocumentoPage> {
       await cameraController.initialize();
     } on CameraException catch (error) {
       debugPrint('Erro ao inicializar câmera: ${error.description}');
-      // Tratar erro, talvez mostrar um SnackBar
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Erro ao iniciar câmera: ${error.description}')),
         );
       }
-      return; // Sai se a inicialização falhar
+      return;
     }
 
     if (mounted) {
@@ -108,18 +114,11 @@ class _DocumentoPageState extends State<DocumentoPage> {
       ),
       body: Column(
         children: [
-          // Widget que mostra a câmera ou a imagem
           Expanded(child: Center(child: _arquivoWidget())),
-          // Exibe o texto extraído, se disponível
-          // if (textoExtraido != null)
-          //   Padding(
-          //     padding: const EdgeInsets.all(16.0),
-          //     child: Text('${ExtrairDadosDePatient.analisarTextoParaPaciente(textoExtraido!).toString()}}')
-          //   ),
         ],
       ),
       floatingActionButton: FloatingActionButton(
-        onPressed: _isScanning ? null : tirarFoto, // Desabilita enquanto processa
+        onPressed: _isScanning ? null : tirarFoto,
         child: _isScanning
             ? const CircularProgressIndicator(color: Colors.white)
             : const Icon(Icons.camera_alt),
@@ -132,7 +131,6 @@ class _DocumentoPageState extends State<DocumentoPage> {
     return SizedBox(
         width: size!.width - 50,
         height: size!.height - (size!.height / 3),
-        // Mostra a câmera se a imagem for nula ou se _isProcessing for falso (para voltar à preview)
         child: imagem == null || !_isScanning
             ? _cameraPreviewWidget()
             : Image.file(File(imagem!.path), fit: BoxFit.contain)
@@ -144,18 +142,12 @@ class _DocumentoPageState extends State<DocumentoPage> {
     if (cameraController == null || !cameraController.value.isInitialized) {
       return const Center(child: CircularProgressIndicator());
     } else {
-      // return Stack(
-      //   alignment: AlignmentDirectional.bottomCenter,
-      //   children: [
-      //     CameraPreview(controller!),
-      //     _botaoCapturarWidget()],
-      // );
       return CameraPreview(controller!);
     }
   }
 
   Future<void> tirarFoto() async {
-    if (_isScanning) return; // Não tira outra foto se já estiver processando
+    if (_isScanning) return;
 
     CameraController? cameraController = controller;
 
@@ -165,10 +157,9 @@ class _DocumentoPageState extends State<DocumentoPage> {
       }
 
       setState(() {
-        _isScanning = true; // Define que está processando
-        imagem = null; // Limpa a imagem anterior para garantir que a preview seja mostrada
-        // ou para evitar mostrar a imagem antiga rapidamente antes da nova.
-        textoExtraido = null; // Limpa o texto anterior
+        _isScanning = true;
+        imagem = null;
+        textoExtraido = null;
       });
 
       try {
@@ -180,7 +171,6 @@ class _DocumentoPageState extends State<DocumentoPage> {
           });
         }
 
-        // Chame a função para processar a imagem e extrair o texto
         await processarImagem(file);
       } on CameraException catch (e) {
         debugPrint('Erro ao tirar foto: ${e.description}');
@@ -189,11 +179,10 @@ class _DocumentoPageState extends State<DocumentoPage> {
             SnackBar(content: Text('Erro ao tirar foto: ${e.description}')),
           );
         }
-        // Mesmo com erro, reseta o _isProcessing
         if (mounted) {
           setState(() {
             _isScanning = false;
-            imagem = null; // Opcional: limpar a imagem em caso de erro na captura
+            imagem = null;
           });
         }
       }
@@ -218,10 +207,11 @@ class _DocumentoPageState extends State<DocumentoPage> {
       }
 
       final MassegeModel message = MassegeModel(
-        from: 'documentoPage',
-        to: 'postman',
+        from: _from,
+        to: to ?? 'app_server',
+        data: 'dadosPaciente',
         event: 'CUSTOM_EVENT',
-        data: dadosPaciente,
+        patient: dadosPaciente,
       );
 
       _channel.sink.add(jsonEncode(message.toJson()));
@@ -247,12 +237,6 @@ class _DocumentoPageState extends State<DocumentoPage> {
         });
       }
     }
-  }
-
-  void sendMessage(Map<String, dynamic> dadosPaciente) {
-    final String data = '{"from":"documentoPage", "to":"postman", "event":"CUSTOM_EVENT", "data":"$dadosPaciente"}';
-
-    _channel.sink.add(data);
   }
 
   @override

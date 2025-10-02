@@ -1,4 +1,6 @@
+import 'package:flutter/cupertino.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
+import 'package:intl/intl.dart';
 import 'package:webcam_doc/models/patient_model.dart';
 
 mixin ExtrairDadosDePatient {
@@ -9,13 +11,11 @@ mixin ExtrairDadosDePatient {
   static PatientModel analisarTextoParaPaciente(RecognizedText recognizedText) {
     String texto = recognizedText.text;
     String? cpf;
-    String? nome;
-    String? dataNascimento;
-    List<String> guesses = [];
+    String? name;
+    DateTime? birthDate;
+    List<String> posibilities = [];
 
     final cpfRegex = RegExp(r'\b\d{3}[.\s]?\d{3}[.\s]?\d{3}[-.\s]?\d{2}\b');
-    final dataNascimentoRegex = RegExp(r'\d{2}[/\- ]\d{2}[/\- ]\d{4}');
-
     final cpfMatch = cpfRegex.firstMatch(texto);
     if (cpfMatch != null) {
       String cpfLimpo = _onlyDigits(cpfMatch.group(0)!);
@@ -24,41 +24,31 @@ mixin ExtrairDadosDePatient {
       }
     }
 
-    final dataContextualRegex = RegExp(r'(DATA\s+DE\s+NASCIMENTO|NASCIMENTO|DT\.?)\s*[:\s]?\s*(\d{2}[/\- ]\d{2}[/\- ]\d{4})', caseSensitive: false);
-    final dataContextualMatch = dataContextualRegex.firstMatch(texto);
-
-    if (dataContextualMatch != null && dataContextualMatch.group(2) != null) {
-      dataNascimento = dataContextualMatch.group(2)!.replaceAll(RegExp(r'[\- ]'), '/');
-    } else {
-      final dataMatch = dataNascimentoRegex.firstMatch(texto);
-      if (dataMatch != null) {
-        dataNascimento = dataMatch.group(0)!.replaceAll(RegExp(r'[\- ]'), '/');
-      }
-    }
+    birthDate = encontrarMenorData(texto);
 
     final List<String> linhas = eliminarRuidos(recognizedText);
-    String? nomeCandidato;
-    bool proximaLinhaENome = false;
+    String? nameCandidato;
+    bool proximaLinhaEname = false;
 
     for (String linha in linhas) {
       String linhaTrimmed = linha.trim();
       String linhaUpper = linhaTrimmed.toUpperCase();
 
-      if (!proximaLinhaENome && nome != null) break;
+      if (!proximaLinhaEname && name != null) break;
 
       if (linhaTrimmed.isEmpty || linhaTrimmed.contains(RegExp(r'\d'))) {
-        proximaLinhaENome = false;
+        proximaLinhaEname = false;
         continue;
       }
 
-      if (proximaLinhaENome) {
+      if (proximaLinhaEname) {
         final palavrasNaLinha = linhaTrimmed.split(RegExp(r'\s+')).where((p) => p.isNotEmpty).toList();
 
         if (palavrasNaLinha.length >= 2 && !linhaUpper.contains("PAI") && !linhaUpper.contains("MÃE") && !linhaUpper.contains("FILIAÇÃO")) {
-          nome = linhaTrimmed;
+          name = linhaTrimmed; // name encontrado, sai do loop
           break;
         }
-        proximaLinhaENome = false;
+        proximaLinhaEname = false;
       }
 
       if (linhaUpper == 'NOME' || linhaUpper.contains("NOME:")) {
@@ -66,37 +56,43 @@ mixin ExtrairDadosDePatient {
         if (linhaUpper.contains("NOME:") && !linhaUpper.contains("PAI") && !linhaUpper.contains("MÃE")) {
           String nomeExtraido = linhaTrimmed.substring(linhaUpper.indexOf("NOME:") + 5).trim();
           if (nomeExtraido.split(RegExp(r'\s+')).length >= 2) {
-            nome = nomeExtraido;
+            name = nomeExtraido;
             break;
           }
         }
 
-        if (nome == null) {
-          proximaLinhaENome = true;
+        if (name == null) { // Só ativa a flag se o name ainda não foi encontrado
+          proximaLinhaEname = true;
         }
         continue;
       }
 
+      // Lógica para adicionar candidatos à lista posibilities
       final palavrasNaLinha = linhaTrimmed.split(RegExp(r'\s+')).where((p) => p.isNotEmpty).toList();
       if (palavrasNaLinha.length >= 2 && palavrasNaLinha.length <= 8) {
-
         if (!linhaUpper.contains("PAI") && !linhaUpper.contains("MÃE") && !linhaUpper.contains("FILIAÇÃO")) {
-          nomeCandidato = linhaTrimmed;
-        } else if (nomeCandidato == null) {
-          nomeCandidato = linhaTrimmed;
+          // Adiciona à lista posibilities se não for um name de pai/mãe
+          // e se ainda não foi definido como o name principal
+          if (name == null && !posibilities.contains(linhaTrimmed)) {
+            posibilities.add(linhaTrimmed);
+          }
+          nameCandidato ??= linhaTrimmed; // Define como candidato se nameCandidato for nulo
+        } else if (nameCandidato == null && name == null && !posibilities.contains(linhaTrimmed)) {
+          // Adiciona à lista posibilities se for uma linha de filiação,
+          // o name principal e o nameCandidato ainda não foram definidos.
+          posibilities.add(linhaTrimmed);
+          nameCandidato = linhaTrimmed;
         }
       }
     }
 
-    nome ??= nomeCandidato;
-
-    eliminarRuidos(recognizedText);
+    name = nameCandidato ?? posibilities.first;
 
     return PatientModel(
       cpf: cpf ?? '',
-      nome: nome ?? '',
-      dataNascimento: dataNascimento ?? '',
-      guesses: guesses.map((e) => e.toString()).toList(),
+      name: name ?? '',
+      birthDate: birthDate,
+      posibilities: posibilities.map((e) => e.toString()).toList(),
     );
   }
 
@@ -104,14 +100,14 @@ mixin ExtrairDadosDePatient {
     List<String> semRuido = [];
 
     const palavrasDescarte = [
-      'INSTITUTO', 'EXPEDIÇÃO', 'VIA', 'DOC', 'MINISTERIO',
-      'EMPREGO', 'CARTEIRA', 'TRABALHO', 'DIRETOR',
-      'IDENTIFICAÇÃO', 'REPÚBLICA', 'FEDERATIVA', 'DOCUMENTO',
-      'ASSINATURA', 'VALIDADE', 'DISTRITO', 'DETRAN', 'ESTADO',
-      'PROCURADOR', 'PROPRIETÁRIO', 'GOVERNO', 'FEDERAL', 'SOCIAL',
-      'SEXO', 'SEX', 'NACIONALIDADE', 'NATURALIDADE', 'SECRETARIA', 'HABILTAÇAO'
-      'DATA', 'DATE', 'REGISTRO', 'PERSONAL', 'OF', 'BIRTH', 'TODO',
-      'TERRITORIO', 'NACIONAL'
+      'INSTITUTO', 'EXPEDIÇÃO', 'VIA', 'DOC', 'MINISTERIO', 'MINISTÉRIO', 'MINISTÈRIO',
+      'EMPREGO', 'CARTEIRA', 'TRABALHO', 'DIRETOR', 'INFRAESTRUTURA', 'TRANSITO'
+      'IDENTIFICAÇÃO', 'REPÚBLICA', 'FEDERATIVA', 'DOCUMENTO', 'HAB', 'NACIONAL',
+      'ASSINATURA', 'VALIDADE', 'DISTRITO', 'DETRAN', 'ESTADO', 'PERMISSÃO',
+      'PROCURADOR', 'PROPRIETÁRIO', 'GOVERNO', 'FEDERAL', 'SOCIAL', 'DATA',
+      'SEXO', 'SEX', 'NACIONALIDADE', 'NATURALIDADE', 'SECRETARIA', 'HABILTAÇAO',
+      'DATE', 'REGISTRO', 'PERSONAL', 'OF', 'BIRTH', 'TODO',
+      'TERRITORIO', 'TERRITÓRIO', 'CNH', 'DOCUMENTO', 'NACIONAL', '.', '/', '-', ':', ',',
     ];
 
     for (TextBlock block in recognizedText.blocks) {
@@ -130,8 +126,36 @@ mixin ExtrairDadosDePatient {
       }
     }
 
-    print('semrido');
-    print(semRuido);
     return semRuido;
   }
+
+  static DateTime? encontrarMenorData(String texto) {
+    final dataRegex = RegExp(r'\b(\d{2}[/\- ]\d{2}[/\- ]\d{4})\b');
+    final matches = dataRegex.allMatches(texto);  if (matches.isEmpty) {
+      return null;
+    }
+
+    List<DateTime> datasEncontradas = [];
+    final DateFormat formatoEntrada = DateFormat('dd/MM/yyyy');
+
+    for (final Match m in matches) {
+      String dataString = m.group(1)!;
+      String dataNormalizada = dataString.replaceAll(RegExp(r'[\- ]'), '/');
+      try {
+        DateTime data = formatoEntrada.parseStrict(dataNormalizada);
+        datasEncontradas.add(data);
+      } catch (e) {
+        debugPrint("Formato de data inválido encontrado e ignorado: $dataNormalizada");
+      }
+    }
+
+    if (datasEncontradas.isEmpty) {
+      return null;
+    }
+
+    datasEncontradas.sort((a, b) => a.compareTo(b));
+
+    return datasEncontradas.first;
+  }
+
 }
