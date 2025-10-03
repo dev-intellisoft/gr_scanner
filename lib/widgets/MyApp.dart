@@ -14,11 +14,6 @@ class MyApp extends StatelessWidget {
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
       ),
       home: Scaffold(
-        appBar: AppBar(
-          centerTitle: true,
-          title: const Text('Scanner'),
-          backgroundColor: Colors.indigo,
-        ),
         body: const DocumentoPage(),
       ),
     );

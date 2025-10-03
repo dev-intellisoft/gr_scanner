@@ -11,11 +11,19 @@ class WebSocketService {
   WebSocketChannel? _channel;
   StreamSubscription? _channelSubscription;
   final StreamController<Map<String, dynamic>> _messageController = StreamController.broadcast();
+  final StreamController<bool> _connectionStatusController = StreamController.broadcast();
+  Stream<bool> get connectionStatus => _connectionStatusController.stream;
   bool _isConnected = false;
 
   // Stream para que a UI possa ouvir as mensagens recebidas
   Stream<Map<String, dynamic>> get messages => _messageController.stream;
   bool get isConnected => _isConnected;
+
+  void _updateConnectionStatus(bool status) {
+    _isConnected = status;
+    _connectionStatusController.add(status); // Notifica a UI sobre a mudança
+    debugPrint("Status da conexão WebSocket atualizado para: $status");
+  }
 
   void connect() {
     // Evita múltiplas conexões simultâneas
@@ -29,7 +37,8 @@ class WebSocketService {
       _channel = WebSocketChannel.connect(
         Uri.parse('${dotenv.env['WEBSOCKET_URL_TEST']}/$_from'),
       );
-      _isConnected = true;
+
+      _updateConnectionStatus(true);
 
       _channelSubscription?.cancel();
       _channelSubscription = _channel!.stream.listen(
@@ -40,6 +49,7 @@ class WebSocketService {
       debugPrint("Conexão WebSocket estabelecida.");
     } catch (e) {
       debugPrint("Falha ao tentar conectar ao WebSocket: $e");
+      _updateConnectionStatus(false);
       _reconnect();
     }
   }
@@ -52,13 +62,13 @@ class WebSocketService {
 
   void _onError(error) {
     debugPrint("Erro no WebSocket: $error");
-    _isConnected = false;
+    _updateConnectionStatus(false);
     _reconnect();
   }
 
   void _onDone() {
     debugPrint("WebSocket desconectado. Tentando reconectar...");
-    _isConnected = false;
+    _updateConnectionStatus(false);
     _reconnect();
   }
 
@@ -74,7 +84,6 @@ class WebSocketService {
       debugPrint('Dados enviados via WebSocket: $jsonMessage');
     } else {
       debugPrint('Não foi possível enviar a mensagem: WebSocket não conectado.');
-      // Opcional: Adicionar a mensagem a uma fila para enviar após a reconexão
     }
   }
 
