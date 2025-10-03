@@ -1,12 +1,12 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
-import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:webcam_doc/models/massege_model.dart';
+import 'package:webcam_doc/services/web_socket_service.dart';
 import 'package:webcam_doc/utils/extrair_dados_de_patient.dart';
 
 
@@ -20,9 +20,8 @@ class DocumentoPage extends StatefulWidget {
 class _DocumentoPageState extends State<DocumentoPage> {
   static const String _from = 'app_scanner';
 
-  final _channel = WebSocketChannel.connect(
-    Uri.parse('${dotenv.env['WEBSOCKET_URL_TEST']}/$_from')
-  );
+  final WebSocketService _webSocketService = WebSocketService();
+  StreamSubscription? _webSocketSubscription;
 
   List<CameraDescription> cameras = [];
   CameraController? controller;
@@ -38,15 +37,19 @@ class _DocumentoPageState extends State<DocumentoPage> {
   _init() async {
     await _loadCameras();
 
-    _channel.stream.listen((message) {
-      Map<String, dynamic> data = jsonDecode(message);
+    _webSocketService.connect();
+    _webSocketSubscription = _webSocketService.messages.listen((data) {
       if (data['event'] == 'CUSTOM_EVENT') {
         to = data['from'];
-        Future.delayed(const Duration(milliseconds: 500), () {
-          tirarFoto();
-        });
+        if (!_isScanning) tirarFoto();
       }
     });
+
+    if (_webSocketService.isConnected) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Conexão WebSocket estabelecida!')),
+      );
+    }
   }
 
   @override
@@ -108,9 +111,6 @@ class _DocumentoPageState extends State<DocumentoPage> {
 
     return Scaffold(
       appBar: AppBar(
-        centerTitle: true,
-        title: Text('Scanner'),
-        backgroundColor: Colors.indigo,
       ),
       body: Column(
         children: [
@@ -214,7 +214,7 @@ class _DocumentoPageState extends State<DocumentoPage> {
         patient: dadosPaciente,
       );
 
-      _channel.sink.add(jsonEncode(message.toJson()));
+      _webSocketService.sendMessage(message);
 
       debugPrint('Dados enviados via WebSocket: ${jsonEncode(message.toJson())}');
       if (mounted) {
@@ -241,7 +241,8 @@ class _DocumentoPageState extends State<DocumentoPage> {
 
   @override
   void dispose() {
-    _channel.sink.close();
+    _webSocketSubscription?.cancel();
+    _webSocketService.dispose();
     controller?.dispose();
     super.dispose();
   }

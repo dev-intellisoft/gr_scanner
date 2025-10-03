@@ -2,6 +2,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
 import 'package:intl/intl.dart';
 import 'package:webcam_doc/models/patient_model.dart';
+import 'package:webcam_doc/utils/validadores.dart';
 
 mixin ExtrairDadosDePatient {
   static String _onlyDigits(String text) {
@@ -16,11 +17,12 @@ mixin ExtrairDadosDePatient {
     List<String> posibilities = [];
 
     final cpfRegex = RegExp(r'\b\d{3}[.\s]?\d{3}[.\s]?\d{3}[-.\s]?\d{2}\b');
+    // final cpfRegex = RegExp(r'^\d{3}\.\d{3}\.\d{3}-\d{2}$');
+
     final cpfMatch = cpfRegex.firstMatch(texto);
     if (cpfMatch != null) {
-      String cpfLimpo = _onlyDigits(cpfMatch.group(0)!);
-      if (cpfLimpo.length == 11) {
-        cpf = cpfLimpo;
+      if (cpfMatch.group(0)!.length == 14 && Validadores.validarCPF(cpfMatch.group(0)!)){
+        cpf = cpfMatch.group(0);
       }
     }
 
@@ -45,7 +47,7 @@ mixin ExtrairDadosDePatient {
         final palavrasNaLinha = linhaTrimmed.split(RegExp(r'\s+')).where((p) => p.isNotEmpty).toList();
 
         if (palavrasNaLinha.length >= 2 && !linhaUpper.contains("PAI") && !linhaUpper.contains("MÃE") && !linhaUpper.contains("FILIAÇÃO")) {
-          name = linhaTrimmed; // name encontrado, sai do loop
+          name = linhaTrimmed;
           break;
         }
         proximaLinhaEname = false;
@@ -61,32 +63,28 @@ mixin ExtrairDadosDePatient {
           }
         }
 
-        if (name == null) { // Só ativa a flag se o name ainda não foi encontrado
+        if (name == null) {
           proximaLinhaEname = true;
         }
         continue;
       }
 
-      // Lógica para adicionar candidatos à lista posibilities
       final palavrasNaLinha = linhaTrimmed.split(RegExp(r'\s+')).where((p) => p.isNotEmpty).toList();
       if (palavrasNaLinha.length >= 2 && palavrasNaLinha.length <= 8) {
         if (!linhaUpper.contains("PAI") && !linhaUpper.contains("MÃE") && !linhaUpper.contains("FILIAÇÃO")) {
-          // Adiciona à lista posibilities se não for um name de pai/mãe
-          // e se ainda não foi definido como o name principal
+
           if (name == null && !posibilities.contains(linhaTrimmed)) {
             posibilities.add(linhaTrimmed);
           }
-          nameCandidato ??= linhaTrimmed; // Define como candidato se nameCandidato for nulo
+          nameCandidato ??= linhaTrimmed;
         } else if (nameCandidato == null && name == null && !posibilities.contains(linhaTrimmed)) {
-          // Adiciona à lista posibilities se for uma linha de filiação,
-          // o name principal e o nameCandidato ainda não foram definidos.
           posibilities.add(linhaTrimmed);
           nameCandidato = linhaTrimmed;
         }
       }
     }
 
-    name = nameCandidato ?? posibilities.first;
+    name = nameCandidato ?? posibilities.firstOrNull;
 
     return PatientModel(
       cpf: cpf ?? '',
@@ -100,7 +98,8 @@ mixin ExtrairDadosDePatient {
     List<String> semRuido = [];
 
     const palavrasDescarte = [
-      'INSTITUTO', 'EXPEDIÇÃO', 'VIA', 'DOC', 'MINISTERIO', 'MINISTÉRIO', 'MINISTÈRIO',
+      'INSTITUTO', 'EXPEDIÇÃO', 'VIA', 'DOC', 'MINISTERIO', 'MINISTÉRIO',
+      'MINISTÊRIO', 'MINISTÈRIO', 'DEPARTAMENTO', 'DIREÇÃO', 'DIRETORIA',
       'EMPREGO', 'CARTEIRA', 'TRABALHO', 'DIRETOR', 'INFRAESTRUTURA', 'TRANSITO'
       'IDENTIFICAÇÃO', 'REPÚBLICA', 'FEDERATIVA', 'DOCUMENTO', 'HAB', 'NACIONAL',
       'ASSINATURA', 'VALIDADE', 'DISTRITO', 'DETRAN', 'ESTADO', 'PERMISSÃO',

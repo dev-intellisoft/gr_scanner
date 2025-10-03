@@ -16,7 +16,7 @@ class MyApp extends StatelessWidget {
       home: Scaffold(
         appBar: AppBar(
           centerTitle: true,
-          title: Text('Pagina para scanner documento'),
+          title: const Text('Scanner'),
           backgroundColor: Colors.indigo,
         ),
         body: const DocumentoPage(),
